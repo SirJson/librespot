@@ -15,7 +15,6 @@ extern crate base64;
 extern crate byteorder;
 extern crate bytes;
 extern crate crypto;
-extern crate extprim;
 extern crate httparse;
 extern crate hyper;
 extern crate hyper_proxy;

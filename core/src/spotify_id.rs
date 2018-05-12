@@ -1,5 +1,3 @@
-use byteorder::{BigEndian, ByteOrder};
-use extprim::u128::u128;
 use std;
 use std::fmt;
 
@@ -12,18 +10,45 @@ pub struct SpotifyIdError;
 const BASE62_DIGITS: &'static [u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const BASE16_DIGITS: &'static [u8] = b"0123456789abcdef";
 
+// Shameless copy from byteorder because he doesn't expose this macro
+macro_rules! read_num_bytes {
+    ($ty:ty, $size:expr, $src:expr, $which:ident) => ({
+        assert!($size == ::std::mem::size_of::<$ty>());
+        assert!($size <= $src.len());
+        let mut data: $ty = 0;
+        unsafe {
+            ::std::ptr::copy_nonoverlapping(
+                $src.as_ptr(),
+                &mut data as *mut $ty as *mut u8,
+                $size);
+        }
+        data.$which()
+    });
+}
+
+macro_rules! write_num_bytes {
+    ($ty:ty, $size:expr, $n:expr, $dst:expr, $which:ident) => ({
+        assert!($size <= $dst.len());
+        unsafe {
+            // N.B. https://github.com/rust-lang/rust/issues/22776
+            let bytes = *(&$n.$which() as *const _ as *const [u8; $size]);
+            ::std::ptr::copy_nonoverlapping((&bytes).as_ptr(), $dst.as_mut_ptr(), $size);
+        }
+    });
+}
+
 impl SpotifyId {
     pub fn from_base16(id: &str) -> Result<SpotifyId, SpotifyIdError> {
         let data = id.as_bytes();
 
-        let mut n: u128 = u128::zero();
+        let mut n: u128 = 0;
         for c in data {
             let d = match BASE16_DIGITS.iter().position(|e| e == c) {
                 None => return Err(SpotifyIdError),
-                Some(x) => x as u64,
+                Some(x) => x as u128,
             };
-            n = n * u128::new(16);
-            n = n + u128::new(d);
+            n = n * 16;
+            n = n + d;
         }
 
         Ok(SpotifyId(n))
@@ -32,14 +57,14 @@ impl SpotifyId {
     pub fn from_base62(id: &str) -> Result<SpotifyId, SpotifyIdError> {
         let data = id.as_bytes();
 
-        let mut n: u128 = u128::zero();
+        let mut n: u128 = 0;
         for c in data {
             let d = match BASE62_DIGITS.iter().position(|e| e == c) {
                 None => return Err(SpotifyIdError),
-                Some(x) => x as u64,
+                Some(x) => x as u128,
             };
-            n = n * u128::new(62);
-            n = n + u128::new(d);
+            n = n * 62;
+            n = n + d;
         }
 
         Ok(SpotifyId(n))
@@ -50,10 +75,9 @@ impl SpotifyId {
             return Err(SpotifyIdError);
         };
 
-        let high = BigEndian::read_u64(&data[0..8]);
-        let low = BigEndian::read_u64(&data[8..16]);
+        let id = read_num_bytes!(u128, 16, &data[0..16], to_be);
 
-        Ok(SpotifyId(u128::from_parts(high, low)))
+        Ok(SpotifyId(id))
     }
 
     pub fn to_base16(&self) -> String {
@@ -61,7 +85,7 @@ impl SpotifyId {
 
         let mut data = [0u8; 32];
         for i in 0..32 {
-            data[31 - i] = BASE16_DIGITS[(n.wrapping_shr(4 * i as u32).low64() & 0xF) as usize];
+            data[31 - i] = BASE16_DIGITS[(n.wrapping_shr(4 * i as u32)) as usize];
         }
 
         std::str::from_utf8(&data).unwrap().to_owned()
@@ -71,9 +95,9 @@ impl SpotifyId {
         let &SpotifyId(mut n) = self;
 
         let mut data = [0u8; 22];
-        let sixty_two = u128::new(62);
+        let sixty_two = 62;
         for i in 0..22 {
-            data[21 - i] = BASE62_DIGITS[(n % sixty_two).low64() as usize];
+            data[21 - i] = BASE62_DIGITS[(n % sixty_two) as usize];
             n /= sixty_two;
         }
 
@@ -85,8 +109,7 @@ impl SpotifyId {
 
         let mut data = [0u8; 16];
 
-        BigEndian::write_u64(&mut data[0..8], n.high64());
-        BigEndian::write_u64(&mut data[8..16], n.low64());
+        write_num_bytes!(u128, 16, n, &mut data[0..16], to_be);
 
         data
     }
