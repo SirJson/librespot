@@ -33,6 +33,7 @@ tokio-core = "0.1.2"
 tokio-io = "0.1"
 url = "1.7.0"
 uuid = { version = "0.4", features = ["v4"] }
+extprim = "1.6"
 
 [build-dependencies]
 rand = "0.3.13"
